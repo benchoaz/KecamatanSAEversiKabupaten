@@ -62,30 +62,51 @@ graph TD
 
 ---
 
-## 🚀 Panduan Instalasi (Quick Start)
+## 🚀 Panduan Deployment (VPS & Server)
 
-### Prasyarat (Prerequisites):
-- Docker & Docker Compose (Versi terbaru)
-- Alat autentikasi WhatsApp (Handphone aktif)
+### Prasyarat:
+- Server Linux (Ubuntu/Debian)
+- Docker & Docker Compose v2+
 
-### Langkah-langkah Deployment:
+### Langkah Instalasi:
 
 1. **Clone Repositori**:
    ```bash
-   git clone https://github.com/benchoaz/KECAMATAN-LAYANAN-WHATSAPP.git
-   cd KECAMATAN-LAYANAN-WHATSAPP
+   git clone https://github.com/benchoaz/KecamatanSAEversiKabupaten.git
+   cd KecamatanSAEversiKabupaten
    ```
 
-2. **Konfigurasi Environment**:
-   Salin file `.env.example` di setiap folder (`dashboard-kecamatan`, `whatsapp`) dan sesuaikan `WAHA_API_KEY` serta `DASHBOARD_API_TOKEN`.
-
-3. **Jalankan Container**:
+2. **Jalankan Setup Otomatis**:
+   Cukup jalankan satu skrip ini untuk menyiapkan seluruh sistem:
    ```bash
-   docker-compose up -d
+   chmod +x setup.sh
+   ./setup.sh
    ```
 
-4. **Pairing WhatsApp**:
-   Akses dashboard WAHA di port `3000` untuk memindai kode QR dan menghubungkan nomor WhatsApp layanan.
+3. **Konfigurasi Khusus (Opsional)**:
+   Edit file `.env` di root untuk menyesuaikan domain atau password database jika diperlukan.
+
+---
+
+## 🔄 Cara Melakukan Pembaruan (Update) di VPS
+
+Sistem aplikasi ini dirancang ter-containerization dengan kuat, sehingga saat ada fitur atau optimasi baru dari repository, Anda tidak akan mengalami kendala *caching* atau ketergantungan paket versi OS.
+
+Cukup jalankan runtutan sintaks berikut secara berurutan di dalam folder `KecamatanSAEversiKabupaten`:
+
+```bash
+# 1. Menarik source-code terbaru dari GitHub
+git pull origin main
+
+# 2. Menata ulang kontainer tanpa downtime lama
+docker compose up -d --build
+
+# 3. Menyesuaikan modifikasi kolom basis data yang baru (Bila ada)
+docker exec kecamatan-app php /var/www/artisan migrate --force
+
+# 4. Membersihkan cache sistem agar perubahan UI/UX tersinkronisasi
+docker exec kecamatan-app php /var/www/artisan optimize:clear
+```
 
 ---
 

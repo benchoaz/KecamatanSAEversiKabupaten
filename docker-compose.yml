@@ -1,0 +1,279 @@
+version: "3.8"
+
+services:
+  # ============================================================
+  # Reverse Proxy & SSL (Traefik)
+  # ============================================================
+  gateway:
+    image: traefik:v2.10
+    container_name: traefik-gateway
+    restart: always
+    command:
+      - "--log.level=INFO"
+      - "--api.insecure=false"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.file.filename=/etc/traefik/dynamic_conf.yml"
+      - "--providers.file.watch=true"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.myresolver.acme.tlschallenge=true"
+      - "--certificatesresolvers.myresolver.acme.email=${ACME_EMAIL:-benchoaz@gmail.com}"
+      - "--certificatesresolvers.myresolver.acme.storage=/acme.json"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./gateway/dynamic_conf.yml:/etc/traefik/dynamic_conf.yml:ro
+      - ./gateway/acme.json:/acme.json
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - kecamatan-network
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ============================================================
+  # Application Core (Laravel 10)
+  # ============================================================
+  app:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+      target: production
+    container_name: kecamatan-app
+    restart: unless-stopped
+    working_dir: /var/www
+    env_file: ./app/.env
+    volumes:
+      - ./app/storage:/var/www/storage:rw
+      - ./app/bootstrap/cache:/var/www/bootstrap/cache:rw
+    networks:
+      - kecamatan-network
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "php", "artisan", "migrate:status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  nginx:
+    image: nginx:alpine
+    container_name: kecamatan-nginx
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.kecamatan-dashboard.rule=Host(`${DOMAIN:-kecamatanbesuk.my.id}`)"
+      - "traefik.http.routers.kecamatan-dashboard.entrypoints=websecure"
+      - "traefik.http.routers.kecamatan-dashboard.tls.certresolver=myresolver"
+      - "traefik.http.routers.kecamatan-dashboard.priority=1"
+      - "traefik.http.middlewares.kecamatan-compress.compress=true"
+      - "traefik.http.middlewares.secure-headers.headers.stsSeconds=31536000"
+      - "traefik.http.middlewares.secure-headers.headers.stsIncludeSubdomains=true"
+      - "traefik.http.middlewares.secure-headers.headers.forceSTSHeader=true"
+      - "traefik.http.routers.kecamatan-dashboard.middlewares=kecamatan-compress,secure-headers"
+    volumes:
+      - ./app/public:/var/www/public:ro
+      - ./app/docker/nginx/conf.d:/etc/nginx/conf.d:ro
+    networks:
+      kecamatan-network:
+        aliases:
+          - dashboard-kecamatan
+    depends_on:
+      - app
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  db:
+    image: postgres:17-alpine
+    container_name: kecamatan-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: dashboard_kecamatan
+      POSTGRES_USER: ${DB_USERNAME:-user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-password}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - kecamatan-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-user} -d dashboard_kecamatan"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  redis:
+    image: redis:7-alpine
+    container_name: kecamatan-redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    networks:
+      - kecamatan-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  scheduler:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    container_name: kecamatan-scheduler
+    restart: unless-stopped
+    working_dir: /var/www
+    env_file: ./app/.env
+    command: >
+      sh -c "while true; do php artisan schedule:run --no-interaction; sleep 60; done"
+    networks:
+      - kecamatan-network
+    depends_on:
+      - app
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ============================================================
+  # WhatsApp & Automation (WAHA + n8n)
+  # ============================================================
+  waha:
+    image: devlikeapro/waha:latest
+    container_name: waha-kecamatan
+    restart: unless-stopped
+    environment:
+      - WHATSAPP_API_TOKEN=${WAHA_API_KEY}
+      - WAHA_API_KEY=${WAHA_API_KEY}
+      - WAHA_SESSION_DATA_SAVE=true
+      - WAHA_DASHBOARD_USERNAME=${WAHA_DASHBOARD_USERNAME}
+      - WAHA_DASHBOARD_PASSWORD=${WAHA_DASHBOARD_PASSWORD}
+      - WHATSAPP_SWAGGER_USERNAME=${WAHA_DASHBOARD_USERNAME}
+      - WHATSAPP_SWAGGER_PASSWORD=${WAHA_DASHBOARD_PASSWORD}
+    volumes:
+      - waha_sessions:/app/.sessions
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.waha.rule=Host(`${DOMAIN:-kecamatanbesuk.my.id}`) && PathPrefix(`/waha`)"
+      - "traefik.http.routers.waha.entrypoints=websecure"
+      - "traefik.http.routers.waha.tls.certresolver=myresolver"
+      - "traefik.http.routers.waha.priority=10"
+      - "traefik.http.services.waha.loadbalancer.server.port=3000"
+      - "traefik.http.middlewares.waha-strip.stripprefix.prefixes=/waha"
+      - "traefik.http.middlewares.waha-ipwhitelist.ipwhitelist.sourcerange=${ALLOWED_IPS:-127.0.0.1/32}"
+      - "traefik.http.routers.waha.middlewares=waha-strip,waha-ipwhitelist"
+    networks:
+      - kecamatan-network
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: kecamatan-n8n
+    restart: unless-stopped
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=false
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+      - N8N_ENV_VARS_ALLOWED=WHATSAPP_API_TOKEN,WAHA_API_KEY,DASHBOARD_API_TOKEN,DASHBOARD_URL
+      - WAHA_API_KEY=${WAHA_API_KEY}
+      - DASHBOARD_API_TOKEN=${DASHBOARD_API_TOKEN}
+      - DASHBOARD_URL=http://kecamatan-nginx
+      - N8N_HOST=${DOMAIN:-kecamatanbesuk.my.id}
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=https
+      - N8N_PATH=/n8n/
+      - WEBHOOK_URL=https://${DOMAIN:-kecamatanbesuk.my.id}/n8n/
+    volumes:
+      - n8n_data:/home/node/.n8n
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.n8n.rule=Host(`${DOMAIN:-kecamatanbesuk.my.id}`) && PathPrefix(`/n8n`)"
+      - "traefik.http.routers.n8n.entrypoints=websecure"
+      - "traefik.http.routers.n8n.tls.certresolver=myresolver"
+      - "traefik.http.routers.n8n.priority=10"
+      - "traefik.http.services.n8n.loadbalancer.server.port=5678"
+      - "traefik.http.middlewares.n8n-ipwhitelist.ipwhitelist.sourcerange=${ALLOWED_IPS:-127.0.0.1/32}"
+      - "traefik.http.routers.n8n.middlewares=n8n-ipwhitelist"
+    networks:
+      - kecamatan-network
+    depends_on:
+      - waha
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  kecamatan-network:
+    driver: bridge
+
+volumes:
+  pgdata:
+  redis_data:
+  n8n_data:
+  waha_sessions:
