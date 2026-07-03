@@ -48,10 +48,14 @@ class ComplaintHandler
         return [
             'success' => true,
             'intent' => 'complaint_initiate',
-            'reply' => "📢 *PENGADUAN MASYARAKAT*\n\n" .
-                "Terima kasih ingin menyampaikan aspirasi.\n\n" .
-                "Siapa nama lengkap Anda?\n" .
-                "(Ketik nama Anda, atau ketik TIDAK untuk membatalkan)",
+            'reply' => "📢 *LAYANAN PENGADUAN MASYARAKAT*\n\n" .
+                "Silakan pilih saluran pengaduan Anda:\n\n" .
+                "1️⃣ *Aduan Resmi Tingkat Kecamatan*\n" .
+                "Laporkan aduan/aspirasi Anda melalui form kecamatan. Untuk memulai, silakan *ketik nama lengkap Anda*:\n\n" .
+                "2️⃣ *Aduan Resmi Tingkat Kabupaten (HALO SAE)*\n" .
+                "Hubungi WhatsApp Bot resmi Kabupaten Probolinggo untuk aduan tingkat kabupaten:\n" .
+                "👉 wa.me/6282131001001 (0821-3100-1001)\n\n" .
+                "_(Ketik TIDAK untuk membatalkan)_",
             'state_update' => 'WAITING_COMPLAINT_NAME',
         ];
     }

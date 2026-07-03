@@ -113,7 +113,7 @@ class AiHandler
             $systemPrompt .= "- Gunakan emoji (👋, 😊, 🌤️, 🌙) secara natural.\n\n";
 
             $systemPrompt .= "PERINTAH KHUSUS LAINNYA:\n";
-            $systemPrompt .= '- Jika warga ingin LAPOR/MENGADU: Berikan link pengaduan: '.$this->getPublicUrl()."/#pengaduan dan informasikan bahwa mereka cukup mengisi formulir tersebut, sistem akan meneruskannya secara otomatis ke Kabupaten jika diperlukan.\n";
+            $systemPrompt .= '- Jika warga ingin LAPOR/MENGADU: Berikan pilihan saluran pengaduan agar mereka bisa memilih: 1. Link pengaduan resmi Kecamatan Besuk di: '.$this->getPublicUrl()."/#pengaduan atau 2. Hubungi WhatsApp Bot resmi Kabupaten Probolinggo (HALO SAE) di nomor 0821-3100-1001 (link: wa.me/6282131001001).\n";
             $systemPrompt .= "- Jika warga mencari JASA, UMKM, MAKANAN, KULINER, atau merasa LAPAR: Arahkan ke Pusat Ekonomi {$regionName} di: ".$this->getPublicUrl()."/ekonomi\n";
             $systemPrompt .= "- Jika warga bertanya tentang pengiriman KTP-el secara online / dikirim ke rumah via POS: Sarankan akses ke https://godigital-disdukcapil.probolinggokab.go.id/daftar_ktp dan infokan syarat dokumen (maks 2MB): 1. Foto Bukti Perekaman / Suket / Surat Kehilangan / KTP Rusak dan 2. Foto KK Asli.\n";
             $systemPrompt .= "- Jika warga bertanya CUACA: Gunakan data resmi BMKG di bawah.\n";
